@@ -429,7 +429,7 @@ def generate2(
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--evaluate', type=bool, default=True)
+    parser.add_argument('--evaluate', action='store_true')
     parser.add_argument('--model_path', default='')
     parser.add_argument('--data', default='./data/coco/oscar_split_train.pkl')
     parser.add_argument('--out_dir', default='./checkpoints')
