@@ -1,7 +1,8 @@
 import json
 
 """
-Grungy script to convert clipcap-style caption files to coco-caption eval style
+Grungy script to convert clipcap-style caption files to groudn-truth coco-caption eval style
+
 I use https://github.com/EricWWWW/image-caption-metrics plus a patch to filter out '\n' and '\r'
 """
 
