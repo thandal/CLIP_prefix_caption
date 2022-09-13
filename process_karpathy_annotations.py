@@ -24,6 +24,6 @@ for i in d['images']:
 print(f'{SPLIT_COUNTS=}')
 
 for split in output.keys():
-  with open(f'{split}_caption.json', 'w') as outfile:
+  with open(f'data/coco/karpathy_split_annotations/{split}_caption.json', 'w') as outfile:
     json.dump(output[split], outfile)
 

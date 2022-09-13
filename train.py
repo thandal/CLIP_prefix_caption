@@ -459,10 +459,8 @@ def main():
         print("Model: both prefix and GPT")
         sys.stdout.flush()
     if (args.evaluate):
-      #model.load_state_dict(torch.load(args.model_path, map_location=torch.device('cpu')))
       print(f"Model: loading from {args.model_path}")
       model.load_state_dict(torch.load(args.model_path, map_location=torch.device('cuda:0')))
-      model.to("cuda:0")
       evaluate(dataset, model, args, output_dir=args.out_dir, output_prefix=args.prefix)
     else: 
       train(dataset, model, args, output_dir=args.out_dir, output_prefix=args.prefix)
