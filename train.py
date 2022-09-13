@@ -12,6 +12,7 @@ import argparse
 import json
 from typing import Tuple, Optional, Union
 
+CONST_PREFIX = 0
 
 class MappingType(Enum):
     MLP = 'mlp'
@@ -35,7 +36,8 @@ class ClipCocoDataset(Dataset):
         mask = tokens.ge(0)  # mask is zero where we out of sequence
         tokens[~mask] = 0
         mask = mask.float()
-        mask = torch.cat((torch.ones(self.prefix_length), mask), dim=0)  # adding prefix mask
+        if CONST_PREFIX:
+          mask = torch.cat((torch.ones(self.prefix_length), mask), dim=0)  # adding prefix mask
         return tokens, mask
 
     def __getitem__(self, item: int) -> Tuple[torch.Tensor, ...]:
@@ -204,13 +206,13 @@ class TransformerMapper(nn.Module):
 
     def forward(self, x):
         x = self.linear(x).view(x.shape[0], self.clip_length, -1)
-        # With learned prefix constant
-        prefix = self.prefix_const.unsqueeze(0).expand(x.shape[0], *self.prefix_const.shape)
-        prefix = torch.cat((x, prefix), dim=1)
-        out = self.transformer(prefix)[:, self.clip_length:]
-#        # Without learned prefix constant
-#        prefix = x
-#        out = self.transformer(prefix)
+        if CONST_PREFIX:  # With learned prefix constant
+            prefix = self.prefix_const.unsqueeze(0).expand(x.shape[0], *self.prefix_const.shape)
+            prefix = torch.cat((x, prefix), dim=1)
+            out = self.transformer(prefix)[:, self.clip_length:]
+        else:  # Without learned prefix constant
+            prefix = x
+            out = self.transformer(prefix)
         return out
 
     def __init__(self, dim_clip: int, dim_embedding: int, prefix_length: int, clip_length: int, num_layers: int = 8):
@@ -218,7 +220,8 @@ class TransformerMapper(nn.Module):
         self.clip_length = clip_length
         self.transformer = Transformer(dim_embedding, 8, num_layers)
         self.linear = nn.Linear(dim_clip, clip_length * dim_embedding)
-        self.prefix_const = nn.Parameter(torch.randn(prefix_length, dim_embedding), requires_grad=True)
+        if CONST_PREFIX:
+            self.prefix_const = nn.Parameter(torch.randn(prefix_length, dim_embedding), requires_grad=True)
 
 
 class ClipCaptionModel(nn.Module):
@@ -460,7 +463,8 @@ def main():
         sys.stdout.flush()
     if (args.evaluate):
       print(f"Model: loading from {args.model_path}")
-      model.load_state_dict(torch.load(args.model_path, map_location=torch.device('cuda:0')))
+      model.load_state_dict(torch.load(args.model_path, map_location=torch.device("cuda:0")))
+      model.to("cuda:0")  # not sure why the map_location in the line above doesn't work...
       evaluate(dataset, model, args, output_dir=args.out_dir, output_prefix=args.prefix)
     else: 
       train(dataset, model, args, output_dir=args.out_dir, output_prefix=args.prefix)
