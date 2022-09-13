@@ -204,9 +204,13 @@ class TransformerMapper(nn.Module):
 
     def forward(self, x):
         x = self.linear(x).view(x.shape[0], self.clip_length, -1)
+        # With learned prefix constant
         prefix = self.prefix_const.unsqueeze(0).expand(x.shape[0], *self.prefix_const.shape)
         prefix = torch.cat((x, prefix), dim=1)
         out = self.transformer(prefix)[:, self.clip_length:]
+#        # Without learned prefix constant
+#        prefix = x
+#        out = self.transformer(prefix)
         return out
 
     def __init__(self, dim_clip: int, dim_embedding: int, prefix_length: int, clip_length: int, num_layers: int = 8):
@@ -333,9 +337,100 @@ def train(dataset: ClipCocoDataset, model: ClipCaptionModel, args,
             )
     return model
 
+def evaluate(dataset: ClipCocoDataset, model: ClipCaptionModel, args, output_dir: str = ".", output_prefix: str = ""):
+    device = torch.device('cuda:0')
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+    print(f">>> Loading dataset...")
+    eval_dataloader = DataLoader(dataset)
+    print(f">>> Evaluating...")
+    sys.stdout.flush()
+    output = {}
+    progress = tqdm(total=len(eval_dataloader), desc=output_prefix)
+    for idx, (tokens, mask, prefix) in enumerate(eval_dataloader):
+        # Since there are like 4 captions per image, I skip all but the first for inference.
+        image_id = dataset.image_ids[idx]
+        if image_id not in output:
+          prefix = prefix.to(device, dtype=torch.float32)
+          prefix_embed = model.clip_project(prefix).reshape(1, model.prefix_length, -1)
+          p = generate2(model, dataset.tokenizer, embed=prefix_embed)
+          output[image_id] = [p]
+        progress.update()
+    with open(os.path.join(output_dir, 'evaluate.json'), 'w') as outfile:
+        json.dump(output, outfile)
+    progress.close()
+
+def generate2(
+    model,
+    tokenizer,
+    tokens=None,
+    prompt=None,
+    embed=None,
+    entry_count=1,
+    entry_length=67,  # maximum number of words
+    top_p=0.8,
+    temperature=1.0,
+    stop_token: str = ".",
+):
+    model.eval()
+    generated_num = 0
+    generated_list = []
+    stop_token_index = tokenizer.encode(stop_token)[0]
+    filter_value = -float("Inf")
+    device = next(model.parameters()).device
+
+    with torch.no_grad():
+
+        for entry_idx in range(entry_count):
+            if embed is not None:
+                generated = embed
+            else:
+                if tokens is None:
+                    tokens = torch.tensor(tokenizer.encode(prompt))
+                    tokens = tokens.unsqueeze(0).to(device)
+
+                generated = model.gpt.transformer.wte(tokens)
+
+            for i in range(entry_length):
+
+                outputs = model.gpt(inputs_embeds=generated)
+                logits = outputs.logits
+                logits = logits[:, -1, :] / (temperature if temperature > 0 else 1.0)
+                sorted_logits, sorted_indices = torch.sort(logits, descending=True)
+                cumulative_probs = torch.cumsum(
+                    nnf.softmax(sorted_logits, dim=-1), dim=-1
+                )
+                sorted_indices_to_remove = cumulative_probs > top_p
+                sorted_indices_to_remove[..., 1:] = sorted_indices_to_remove[
+                    ..., :-1
+                ].clone()
+                sorted_indices_to_remove[..., 0] = 0
+
+                indices_to_remove = sorted_indices[sorted_indices_to_remove]
+                logits[:, indices_to_remove] = filter_value
+                next_token = torch.argmax(logits, -1).unsqueeze(0)
+                next_token_embed = model.gpt.transformer.wte(next_token)
+                if tokens is None:
+                    tokens = next_token
+                else:
+                    tokens = torch.cat((tokens, next_token), dim=1)
+                generated = torch.cat((generated, next_token_embed), dim=1)
+                if stop_token_index == next_token.item():
+                    break
+
+            output_list = list(tokens.squeeze().cpu().numpy())
+            output_text = tokenizer.decode(output_list)
+            generated_list.append(output_text)
+
+    return generated_list[0]
+
+
+
 
 def main():
     parser = argparse.ArgumentParser()
+    parser.add_argument('--evaluate', type=bool, default=True)
+    parser.add_argument('--model_path', default='')
     parser.add_argument('--data', default='./data/coco/oscar_split_train.pkl')
     parser.add_argument('--out_dir', default='./checkpoints')
     parser.add_argument('--prefix', default='coco_prefix', help='prefix for saved filenames')
@@ -357,13 +452,20 @@ def main():
     if args.only_prefix:
         model = ClipCaptionPrefix(prefix_length, clip_length=args.prefix_length_clip, prefix_size=prefix_dim,
                                   num_layers=args.num_layers, mapping_type=args.mapping_type)
-        print("Train only prefix")
+        print("Model: only prefix")
     else:
         model = ClipCaptionModel(prefix_length, clip_length=args.prefix_length_clip, prefix_size=prefix_dim,
                                   num_layers=args.num_layers, mapping_type=args.mapping_type)
-        print("Train both prefix and GPT")
+        print("Model: both prefix and GPT")
         sys.stdout.flush()
-    train(dataset, model, args, output_dir=args.out_dir, output_prefix=args.prefix)
+    if (args.evaluate):
+      #model.load_state_dict(torch.load(args.model_path, map_location=torch.device('cpu')))
+      print(f"Model: loading from {args.model_path}")
+      model.load_state_dict(torch.load(args.model_path, map_location=torch.device('cuda:0')))
+      model.to("cuda:0")
+      evaluate(dataset, model, args, output_dir=args.out_dir, output_prefix=args.prefix)
+    else: 
+      train(dataset, model, args, output_dir=args.out_dir, output_prefix=args.prefix)
 
 
 if __name__ == '__main__':

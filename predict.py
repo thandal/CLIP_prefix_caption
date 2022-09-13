@@ -45,7 +45,7 @@ D = torch.device
 CPU = torch.device("cpu")
 
 
-class Predictor(cog.Predictor):
+class Predictor(cog.BasePredictor):
     def setup(self):
         """Load the model into memory to make running multiple predictions efficient"""
         self.device = torch.device("cuda")
@@ -63,15 +63,15 @@ class Predictor(cog.Predictor):
             model = model.to(self.device)
             self.models[key] = model
 
-    @cog.input("image", type=cog.Path, help="Input image")
-    @cog.input(
+    @cog.Input("image", type=cog.Path, help="Input image")
+    @cog.Input(
         "model",
         type=str,
         options=WEIGHTS_PATHS.keys(),
         default="coco",
         help="Model to use",
     )
-    @cog.input(
+    @cog.Input(
         "use_beam_search",
         type=bool,
         default=False,
