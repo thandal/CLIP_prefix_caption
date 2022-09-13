@@ -1,11 +1,12 @@
 import json
 
-""" Processes the original Karpathy splits into clipcap-style caption json files """
+""" Processes the original Karpathy splits into clipcap-style caption json files.
 
-# Download the karpathy splits from http://cs.stanford.edu/people/karpathy/deepimagesent/caption_datasets.zip
-# and unzip them.
+Download the karpathy splits from http://cs.stanford.edu/people/karpathy/deepimagesent/caption_datasets.zip
+and unzip them into data/coco/karpathy_split_annotations, then run this script.
+"""
 
-d = json.load(open('dataset_coco.json'))
+d = json.load(open('data/coco/karpathy_split_annotations/dataset_coco.json'))
 
 output = {}
 SPLIT_COUNTS = {}
