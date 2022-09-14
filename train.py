@@ -12,7 +12,7 @@ import argparse
 import json
 from typing import Tuple, Optional, Union
 
-CONST_PREFIX = 0
+CONST_PREFIX = 1
 
 class MappingType(Enum):
     MLP = 'mlp'
@@ -36,8 +36,7 @@ class ClipCocoDataset(Dataset):
         mask = tokens.ge(0)  # mask is zero where we out of sequence
         tokens[~mask] = 0
         mask = mask.float()
-        if CONST_PREFIX:
-          mask = torch.cat((torch.ones(self.prefix_length), mask), dim=0)  # adding prefix mask
+        mask = torch.cat((torch.ones(self.prefix_length), mask), dim=0)  # adding prefix mask
         return tokens, mask
 
     def __getitem__(self, item: int) -> Tuple[torch.Tensor, ...]:
@@ -467,6 +466,7 @@ def main():
       model.to("cuda:0")  # not sure why the map_location in the line above doesn't work...
       evaluate(dataset, model, args, output_dir=args.out_dir, output_prefix=args.prefix)
     else: 
+      print('Model: number of trainable parameters is', sum(p.numel() for p in model.parameters() if p.requires_grad))
       train(dataset, model, args, output_dir=args.out_dir, output_prefix=args.prefix)
 
 
